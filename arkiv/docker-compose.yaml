@@ -1,0 +1,26 @@
+services:
+  loadbalancer:
+    container_name: loadbalancer
+    image: haproxy:1.8
+    network_mode: host
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+    ports:
+      - 443:443
+      - 6443:6443
+      - 80:80
+
+  postgres:
+    container_name: postgres
+    image: postgres:17
+    network_mode: host
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./pg_hba.conf:/var/lib/postgresql/data/pgdata/pg_hba.conf
+    environment:
+      POSTGRES_USER: kairos
+      POSTGRES_PASSWORD: kairos
+      PGDATA: /var/lib/postgresql/data/pgdata
+
+volumes:
+  postgres:
