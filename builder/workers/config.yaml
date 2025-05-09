@@ -1,0 +1,25 @@
+#cloud-config
+
+name: k3s agent
+hostname: agent-{{ trunc 4 .MachineID }}
+
+install:
+  device: /dev/sda
+  reboot: true
+  auto: true
+
+users:
+  - name: kairos
+    passwd: kairos
+    groups:
+      - admin
+    ssh-authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMR46OCN8sSx05VPui+gCDXX+O8VkeIctfOkS9rlKwIh # public key
+
+k3s-agent:
+  enabled: true
+  args:
+    - --node-label=role=worker
+  env:
+    K3S_TOKEN: "66e9544845135293dad82e855886198a"
+    K3S_URL: "https://192.168.0.100:6443"
