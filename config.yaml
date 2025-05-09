@@ -19,7 +19,7 @@ users:
 k3s:
   enabled: true
   args:
-    - --server https://192.168.0.100:6443
+    # - --server https://192.168.0.100:6443
     - --tls-san 192.168.0.100
     # - --datastore-endpoint postgres://kairos:kairos@192.168.0.195:5432/kairos
   env:

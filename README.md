@@ -18,3 +18,5 @@
     ```bash
     sudo chown $(whoami):$(whoami) -R build
     ```
+
+3.  Upload image to Proxmox/vSphere
