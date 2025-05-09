@@ -1,3 +1,7 @@
+# Todo
+
+- Postgresql database!
+
 # Build Kairos k3s iso image
 
 1.  Build image:
