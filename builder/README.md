@@ -2,7 +2,18 @@
 
 - Postgresql database!
 
-# Build Kairos k3s iso image
+## Introduction
+
+This setup is intended to run HA
+
+### Prerequisuites
+
+### Verification steps
+
+* Shutdown one of the controlplane nodes.
+
+
+## Build Kairos k3s iso image
 
 1.  Build image:
 

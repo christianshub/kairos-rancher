@@ -21,7 +21,7 @@ k3s:
   args:
     - --server "https://192.168.0.100:6443"
     - --tls-san "192.168.0.100"
-    - --node-label "role=control-plane"
+    - --datastore-endpoint postgres://kairos:kairos@192.168.0.117:15432/kairos
   env:
     K3S_TOKEN: "66e9544845135293dad82e855886198a"
     K3S_URL: "https://192.168.0.100:6443"

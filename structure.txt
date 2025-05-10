@@ -1,0 +1,1149 @@
+.
+â”œâ”€â”€ README.md
+â”œâ”€â”€ builder
+â”‚Â Â  â”œâ”€â”€ README.md
+â”‚Â Â  â”œâ”€â”€ controlplanes
+â”‚Â Â  â”‚Â Â  â””â”€â”€ config.yaml
+â”‚Â Â  â”œâ”€â”€ init-node
+â”‚Â Â  â”‚Â Â  â””â”€â”€ config.yaml
+â”‚Â Â  â””â”€â”€ workers
+â”‚Â Â      â””â”€â”€ config.yaml
+â””â”€â”€ provisioner
+
+5 directories, 5 files
+
+--- ./builder/controlplanes/config.yaml ---
+#cloud-config
+
+name: k3s server
+hostname: server-{{ trunc 4 .MachineID }}
+
+install:
+  device: /dev/sda
+  reboot: true
+  auto: true
+
+users:
+  - name: kairos
+    passwd: kairos
+    groups:
+      - admin
+    ssh-authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMR46OCN8sSx05VPui+gCDXX+O8VkeIctfOkS9rlKwIh # public key
+
+k3s:
+  enabled: true
+  args:
+    - --server "https://192.168.0.100:6443"
+    - --tls-san "192.168.0.100"
+    - --node-label "role=control-plane"
+  env:
+    K3S_TOKEN: "66e9544845135293dad82e855886198a"
+    K3S_URL: "https://192.168.0.100:6443"
+
+--- ./builder/workers/config.yaml ---
+#cloud-config
+
+name: k3s agent
+hostname: agent-{{ trunc 4 .MachineID }}
+
+install:
+  device: /dev/sda
+  reboot: true
+  auto: true
+
+users:
+  - name: kairos
+    passwd: kairos
+    groups:
+      - admin
+    ssh-authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMR46OCN8sSx05VPui+gCDXX+O8VkeIctfOkS9rlKwIh # public key
+
+k3s-agent:
+  enabled: true
+  env:
+    K3S_TOKEN: "66e9544845135293dad82e855886198a"
+    K3S_URL: "https://192.168.0.100:6443"
+
+--- ./builder/README.md ---
+# Todo
+
+- Postgresql database!
+
+# Build Kairos k3s iso image
+
+1.  Build image:
+
+    ```bash
+    docker run -v "$PWD"/config.yaml:/config.yaml \
+    -v "$PWD"/build:/tmp/auroraboot \
+    --rm -ti quay.io/kairos/auroraboot \
+    --set container_image=quay.io/kairos/debian:bookworm-standard-amd64-generic-v3.3.2-k3sv1.30.8-k3s1 \
+    --set "disable_http_server=true" \
+    --set "disable_netboot=true" \
+    --cloud-config /config.yaml \
+    --set "state_dir=/tmp/auroraboot"
+    ```
+
+2.  Ensure correct permissions are set for the build directory:
+
+    ```bash
+    sudo chown $(whoami):$(whoami) -R build
+    ```
+
+3.  Upload image to Proxmox/vSphere
+
+--- ./builder/init-node/config.yaml ---
+#cloud-config
+
+name: k3s server
+hostname: server-{{ trunc 4 .MachineID }}
+
+install:
+  device: /dev/sda
+  reboot: true
+  auto: true
+
+users:
+  - name: kairos
+    passwd: kairos
+    groups:
+      - admin
+    ssh-authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMR46OCN8sSx05VPui+gCDXX+O8VkeIctfOkS9rlKwIh # public key
+
+k3s:
+  enabled: true
+  args:
+    - --tls-san 192.168.0.100
+  env:
+    K3S_TOKEN: "66e9544845135293dad82e855886198a"
+
+--- ./.gitignore ---
+build/
+structure
+
+--- ./.git/description ---
+Unnamed repository; edit this file 'description' to name the repository.
+
+--- ./.git/packed-refs ---
+# pack-refs with: peeled fully-peeled sorted 
+b2f4acc68dab7a174f912f9039cdb12222550863 refs/remotes/origin/main
+
+--- ./.git/hooks/post-update.sample ---
+#!/bin/sh
+#
+# An example hook script to prepare a packed repository for use over
+# dumb transports.
+#
+# To enable this hook, rename this file to "post-update".
+
+exec git update-server-info
+
+--- ./.git/hooks/commit-msg.sample ---
+#!/bin/sh
+#
+# An example hook script to check the commit log message.
+# Called by "git commit" with one argument, the name of the file
+# that has the commit message.  The hook should exit with non-zero
+# status after issuing an appropriate message if it wants to stop the
+# commit.  The hook is allowed to edit the commit message file.
+#
+# To enable this hook, rename this file to "commit-msg".
+
+# Uncomment the below to add a Signed-off-by line to the message.
+# Doing this in a hook is a bad idea in general, but the prepare-commit-msg
+# hook is more suited to it.
+#
+# SOB=$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
+# grep -qs "^$SOB" "$1" || echo "$SOB" >> "$1"
+
+# This example catches duplicate Signed-off-by lines.
+
+test "" = "$(grep '^Signed-off-by: ' "$1" |
+	 sort | uniq -c | sed -e '/^[ 	]*1[ 	]/d')" || {
+	echo >&2 Duplicate Signed-off-by lines.
+	exit 1
+}
+
+--- ./.git/hooks/pre-merge-commit.sample ---
+#!/bin/sh
+#
+# An example hook script to verify what is about to be committed.
+# Called by "git merge" with no arguments.  The hook should
+# exit with non-zero status after issuing an appropriate message to
+# stderr if it wants to stop the merge commit.
+#
+# To enable this hook, rename this file to "pre-merge-commit".
+
+. git-sh-setup
+test -x "$GIT_DIR/hooks/pre-commit" &&
+        exec "$GIT_DIR/hooks/pre-commit"
+:
+
+--- ./.git/hooks/fsmonitor-watchman.sample ---
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use IPC::Open2;
+
+# An example hook script to integrate Watchman
+# (https://facebook.github.io/watchman/) with git to speed up detecting
+# new and modified files.
+#
+# The hook is passed a version (currently 2) and last update token
+# formatted as a string and outputs to stdout a new update token and
+# all files that have been modified since the update token. Paths must
+# be relative to the root of the working tree and separated by a single NUL.
+#
+# To enable this hook, rename this file to "query-watchman" and set
+# 'git config core.fsmonitor .git/hooks/query-watchman'
+#
+my ($version, $last_update_token) = @ARGV;
+
+# Uncomment for debugging
+# print STDERR "$0 $version $last_update_token\n";
+
+# Check the hook interface version
+if ($version ne 2) {
+	die "Unsupported query-fsmonitor hook version '$version'.\n" .
+	    "Falling back to scanning...\n";
+}
+
+my $git_work_tree = get_working_dir();
+
+my $retry = 1;
+
+my $json_pkg;
+eval {
+	require JSON::XS;
+	$json_pkg = "JSON::XS";
+	1;
+} or do {
+	require JSON::PP;
+	$json_pkg = "JSON::PP";
+};
+
+launch_watchman();
+
+sub launch_watchman {
+	my $o = watchman_query();
+	if (is_work_tree_watched($o)) {
+		output_result($o->{clock}, @{$o->{files}});
+	}
+}
+
+sub output_result {
+	my ($clockid, @files) = @_;
+
+	# Uncomment for debugging watchman output
+	# open (my $fh, ">", ".git/watchman-output.out");
+	# binmode $fh, ":utf8";
+	# print $fh "$clockid\n@files\n";
+	# close $fh;
+
+	binmode STDOUT, ":utf8";
+	print $clockid;
+	print "\0";
+	local $, = "\0";
+	print @files;
+}
+
+sub watchman_clock {
+	my $response = qx/watchman clock "$git_work_tree"/;
+	die "Failed to get clock id on '$git_work_tree'.\n" .
+		"Falling back to scanning...\n" if $? != 0;
+
+	return $json_pkg->new->utf8->decode($response);
+}
+
+sub watchman_query {
+	my $pid = open2(\*CHLD_OUT, \*CHLD_IN, 'watchman -j --no-pretty')
+	or die "open2() failed: $!\n" .
+	"Falling back to scanning...\n";
+
+	# In the query expression below we're asking for names of files that
+	# changed since $last_update_token but not from the .git folder.
+	#
+	# To accomplish this, we're using the "since" generator to use the
+	# recency index to select candidate nodes and "fields" to limit the
+	# output to file names only. Then we're using the "expression" term to
+	# further constrain the results.
+	if (substr($last_update_token, 0, 1) eq "c") {
+		$last_update_token = "\"$last_update_token\"";
+	}
+	my $query = <<"	END";
+		["query", "$git_work_tree", {
+			"since": $last_update_token,
+			"fields": ["name"],
+			"expression": ["not", ["dirname", ".git"]]
+		}]
+	END
+
+	# Uncomment for debugging the watchman query
+	# open (my $fh, ">", ".git/watchman-query.json");
+	# print $fh $query;
+	# close $fh;
+
+	print CHLD_IN $query;
+	close CHLD_IN;
+	my $response = do {local $/; <CHLD_OUT>};
+
+	# Uncomment for debugging the watch response
+	# open ($fh, ">", ".git/watchman-response.json");
+	# print $fh $response;
+	# close $fh;
+
+	die "Watchman: command returned no output.\n" .
+	"Falling back to scanning...\n" if $response eq "";
+	die "Watchman: command returned invalid output: $response\n" .
+	"Falling back to scanning...\n" unless $response =~ /^\{/;
+
+	return $json_pkg->new->utf8->decode($response);
+}
+
+sub is_work_tree_watched {
+	my ($output) = @_;
+	my $error = $output->{error};
+	if ($retry > 0 and $error and $error =~ m/unable to resolve root .* directory (.*) is not watched/) {
+		$retry--;
+		my $response = qx/watchman watch "$git_work_tree"/;
+		die "Failed to make watchman watch '$git_work_tree'.\n" .
+		    "Falling back to scanning...\n" if $? != 0;
+		$output = $json_pkg->new->utf8->decode($response);
+		$error = $output->{error};
+		die "Watchman: $error.\n" .
+		"Falling back to scanning...\n" if $error;
+
+		# Uncomment for debugging watchman output
+		# open (my $fh, ">", ".git/watchman-output.out");
+		# close $fh;
+
+		# Watchman will always return all files on the first query so
+		# return the fast "everything is dirty" flag to git and do the
+		# Watchman query just to get it over with now so we won't pay
+		# the cost in git to look up each individual file.
+		my $o = watchman_clock();
+		$error = $output->{error};
+
+		die "Watchman: $error.\n" .
+		"Falling back to scanning...\n" if $error;
+
+		output_result($o->{clock}, ("/"));
+		$last_update_token = $o->{clock};
+
+		eval { launch_watchman() };
+		return 0;
+	}
+
+	die "Watchman: $error.\n" .
+	"Falling back to scanning...\n" if $error;
+
+	return 1;
+}
+
+sub get_working_dir {
+	my $working_dir;
+	if ($^O =~ 'msys' || $^O =~ 'cygwin') {
+		$working_dir = Win32::GetCwd();
+		$working_dir =~ tr/\\/\//;
+	} else {
+		require Cwd;
+		$working_dir = Cwd::cwd();
+	}
+
+	return $working_dir;
+}
+
+--- ./.git/hooks/update.sample ---
+#!/bin/sh
+#
+# An example hook script to block unannotated tags from entering.
+# Called by "git receive-pack" with arguments: refname sha1-old sha1-new
+#
+# To enable this hook, rename this file to "update".
+#
+# Config
+# ------
+# hooks.allowunannotated
+#   This boolean sets whether unannotated tags will be allowed into the
+#   repository.  By default they won't be.
+# hooks.allowdeletetag
+#   This boolean sets whether deleting tags will be allowed in the
+#   repository.  By default they won't be.
+# hooks.allowmodifytag
+#   This boolean sets whether a tag may be modified after creation. By default
+#   it won't be.
+# hooks.allowdeletebranch
+#   This boolean sets whether deleting branches will be allowed in the
+#   repository.  By default they won't be.
+# hooks.denycreatebranch
+#   This boolean sets whether remotely creating branches will be denied
+#   in the repository.  By default this is allowed.
+#
+
+# --- Command line
+refname="$1"
+oldrev="$2"
+newrev="$3"
+
+# --- Safety check
+if [ -z "$GIT_DIR" ]; then
+	echo "Don't run this script from the command line." >&2
+	echo " (if you want, you could supply GIT_DIR then run" >&2
+	echo "  $0 <ref> <oldrev> <newrev>)" >&2
+	exit 1
+fi
+
+if [ -z "$refname" -o -z "$oldrev" -o -z "$newrev" ]; then
+	echo "usage: $0 <ref> <oldrev> <newrev>" >&2
+	exit 1
+fi
+
+# --- Config
+allowunannotated=$(git config --type=bool hooks.allowunannotated)
+allowdeletebranch=$(git config --type=bool hooks.allowdeletebranch)
+denycreatebranch=$(git config --type=bool hooks.denycreatebranch)
+allowdeletetag=$(git config --type=bool hooks.allowdeletetag)
+allowmodifytag=$(git config --type=bool hooks.allowmodifytag)
+
+# check for no description
+projectdesc=$(sed -e '1q' "$GIT_DIR/description")
+case "$projectdesc" in
+"Unnamed repository"* | "")
+	echo "*** Project description file hasn't been set" >&2
+	exit 1
+	;;
+esac
+
+# --- Check types
+# if $newrev is 0000...0000, it's a commit to delete a ref.
+zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+if [ "$newrev" = "$zero" ]; then
+	newrev_type=delete
+else
+	newrev_type=$(git cat-file -t $newrev)
+fi
+
+case "$refname","$newrev_type" in
+	refs/tags/*,commit)
+		# un-annotated tag
+		short_refname=${refname##refs/tags/}
+		if [ "$allowunannotated" != "true" ]; then
+			echo "*** The un-annotated tag, $short_refname, is not allowed in this repository" >&2
+			echo "*** Use 'git tag [ -a | -s ]' for tags you want to propagate." >&2
+			exit 1
+		fi
+		;;
+	refs/tags/*,delete)
+		# delete tag
+		if [ "$allowdeletetag" != "true" ]; then
+			echo "*** Deleting a tag is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	refs/tags/*,tag)
+		# annotated tag
+		if [ "$allowmodifytag" != "true" ] && git rev-parse $refname > /dev/null 2>&1
+		then
+			echo "*** Tag '$refname' already exists." >&2
+			echo "*** Modifying a tag is not allowed in this repository." >&2
+			exit 1
+		fi
+		;;
+	refs/heads/*,commit)
+		# branch
+		if [ "$oldrev" = "$zero" -a "$denycreatebranch" = "true" ]; then
+			echo "*** Creating a branch is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	refs/heads/*,delete)
+		# delete branch
+		if [ "$allowdeletebranch" != "true" ]; then
+			echo "*** Deleting a branch is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	refs/remotes/*,commit)
+		# tracking branch
+		;;
+	refs/remotes/*,delete)
+		# delete tracking branch
+		if [ "$allowdeletebranch" != "true" ]; then
+			echo "*** Deleting a tracking branch is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	*)
+		# Anything else (is there anything else?)
+		echo "*** Update hook: unknown type of update to ref $refname of type $newrev_type" >&2
+		exit 1
+		;;
+esac
+
+# --- Finished
+exit 0
+
+--- ./.git/hooks/pre-rebase.sample ---
+#!/bin/sh
+#
+# Copyright (c) 2006, 2008 Junio C Hamano
+#
+# The "pre-rebase" hook is run just before "git rebase" starts doing
+# its job, and can prevent the command from running by exiting with
+# non-zero status.
+#
+# The hook is called with the following parameters:
+#
+# $1 -- the upstream the series was forked from.
+# $2 -- the branch being rebased (or empty when rebasing the current branch).
+#
+# This sample shows how to prevent topic branches that are already
+# merged to 'next' branch from getting rebased, because allowing it
+# would result in rebasing already published history.
+
+publish=next
+basebranch="$1"
+if test "$#" = 2
+then
+	topic="refs/heads/$2"
+else
+	topic=`git symbolic-ref HEAD` ||
+	exit 0 ;# we do not interrupt rebasing detached HEAD
+fi
+
+case "$topic" in
+refs/heads/??/*)
+	;;
+*)
+	exit 0 ;# we do not interrupt others.
+	;;
+esac
+
+# Now we are dealing with a topic branch being rebased
+# on top of master.  Is it OK to rebase it?
+
+# Does the topic really exist?
+git show-ref -q "$topic" || {
+	echo >&2 "No such branch $topic"
+	exit 1
+}
+
+# Is topic fully merged to master?
+not_in_master=`git rev-list --pretty=oneline ^master "$topic"`
+if test -z "$not_in_master"
+then
+	echo >&2 "$topic is fully merged to master; better remove it."
+	exit 1 ;# we could allow it, but there is no point.
+fi
+
+# Is topic ever merged to next?  If so you should not be rebasing it.
+only_next_1=`git rev-list ^master "^$topic" ${publish} | sort`
+only_next_2=`git rev-list ^master           ${publish} | sort`
+if test "$only_next_1" = "$only_next_2"
+then
+	not_in_topic=`git rev-list "^$topic" master`
+	if test -z "$not_in_topic"
+	then
+		echo >&2 "$topic is already up to date with master"
+		exit 1 ;# we could allow it, but there is no point.
+	else
+		exit 0
+	fi
+else
+	not_in_next=`git rev-list --pretty=oneline ^${publish} "$topic"`
+	/usr/bin/perl -e '
+		my $topic = $ARGV[0];
+		my $msg = "* $topic has commits already merged to public branch:\n";
+		my (%not_in_next) = map {
+			/^([0-9a-f]+) /;
+			($1 => 1);
+		} split(/\n/, $ARGV[1]);
+		for my $elem (map {
+				/^([0-9a-f]+) (.*)$/;
+				[$1 => $2];
+			} split(/\n/, $ARGV[2])) {
+			if (!exists $not_in_next{$elem->[0]}) {
+				if ($msg) {
+					print STDERR $msg;
+					undef $msg;
+				}
+				print STDERR " $elem->[1]\n";
+			}
+		}
+	' "$topic" "$not_in_next" "$not_in_master"
+	exit 1
+fi
+
+<<\DOC_END
+
+This sample hook safeguards topic branches that have been
+published from being rewound.
+
+The workflow assumed here is:
+
+ * Once a topic branch forks from "master", "master" is never
+   merged into it again (either directly or indirectly).
+
+ * Once a topic branch is fully cooked and merged into "master",
+   it is deleted.  If you need to build on top of it to correct
+   earlier mistakes, a new topic branch is created by forking at
+   the tip of the "master".  This is not strictly necessary, but
+   it makes it easier to keep your history simple.
+
+ * Whenever you need to test or publish your changes to topic
+   branches, merge them into "next" branch.
+
+The script, being an example, hardcodes the publish branch name
+to be "next", but it is trivial to make it configurable via
+$GIT_DIR/config mechanism.
+
+With this workflow, you would want to know:
+
+(1) ... if a topic branch has ever been merged to "next".  Young
+    topic branches can have stupid mistakes you would rather
+    clean up before publishing, and things that have not been
+    merged into other branches can be easily rebased without
+    affecting other people.  But once it is published, you would
+    not want to rewind it.
+
+(2) ... if a topic branch has been fully merged to "master".
+    Then you can delete it.  More importantly, you should not
+    build on top of it -- other people may already want to
+    change things related to the topic as patches against your
+    "master", so if you need further changes, it is better to
+    fork the topic (perhaps with the same name) afresh from the
+    tip of "master".
+
+Let's look at this example:
+
+		   o---o---o---o---o---o---o---o---o---o "next"
+		  /       /           /           /
+		 /   a---a---b A     /           /
+		/   /               /           /
+	       /   /   c---c---c---c B         /
+	      /   /   /             \         /
+	     /   /   /   b---b C     \       /
+	    /   /   /   /             \     /
+    ---o---o---o---o---o---o---o---o---o---o---o "master"
+
+
+A, B and C are topic branches.
+
+ * A has one fix since it was merged up to "next".
+
+ * B has finished.  It has been fully merged up to "master" and "next",
+   and is ready to be deleted.
+
+ * C has not merged to "next" at all.
+
+We would want to allow C to be rebased, refuse A, and encourage
+B to be deleted.
+
+To compute (1):
+
+	git rev-list ^master ^topic next
+	git rev-list ^master        next
+
+	if these match, topic has not merged in next at all.
+
+To compute (2):
+
+	git rev-list master..topic
+
+	if this is empty, it is fully merged to "master".
+
+DOC_END
+
+--- ./.git/hooks/pre-receive.sample ---
+#!/bin/sh
+#
+# An example hook script to make use of push options.
+# The example simply echoes all push options that start with 'echoback='
+# and rejects all pushes when the "reject" push option is used.
+#
+# To enable this hook, rename this file to "pre-receive".
+
+if test -n "$GIT_PUSH_OPTION_COUNT"
+then
+	i=0
+	while test "$i" -lt "$GIT_PUSH_OPTION_COUNT"
+	do
+		eval "value=\$GIT_PUSH_OPTION_$i"
+		case "$value" in
+		echoback=*)
+			echo "echo from the pre-receive-hook: ${value#*=}" >&2
+			;;
+		reject)
+			exit 1
+		esac
+		i=$((i + 1))
+	done
+fi
+
+--- ./.git/hooks/pre-push.sample ---
+#!/bin/sh
+
+# An example hook script to verify what is about to be pushed.  Called by "git
+# push" after it has checked the remote status, but before anything has been
+# pushed.  If this script exits with a non-zero status nothing will be pushed.
+#
+# This hook is called with the following parameters:
+#
+# $1 -- Name of the remote to which the push is being done
+# $2 -- URL to which the push is being done
+#
+# If pushing without using a named remote those arguments will be equal.
+#
+# Information about the commits which are being pushed is supplied as lines to
+# the standard input in the form:
+#
+#   <local ref> <local oid> <remote ref> <remote oid>
+#
+# This sample shows how to prevent push of commits where the log message starts
+# with "WIP" (work in progress).
+
+remote="$1"
+url="$2"
+
+zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+
+while read local_ref local_oid remote_ref remote_oid
+do
+	if test "$local_oid" = "$zero"
+	then
+		# Handle delete
+		:
+	else
+		if test "$remote_oid" = "$zero"
+		then
+			# New branch, examine all commits
+			range="$local_oid"
+		else
+			# Update to existing branch, examine new commits
+			range="$remote_oid..$local_oid"
+		fi
+
+		# Check for WIP commit
+		commit=$(git rev-list -n 1 --grep '^WIP' "$range")
+		if test -n "$commit"
+		then
+			echo >&2 "Found WIP commit in $local_ref, not pushing"
+			exit 1
+		fi
+	fi
+done
+
+exit 0
+
+--- ./.git/hooks/pre-applypatch.sample ---
+#!/bin/sh
+#
+# An example hook script to verify what is about to be committed
+# by applypatch from an e-mail message.
+#
+# The hook should exit with non-zero status after issuing an
+# appropriate message if it wants to stop the commit.
+#
+# To enable this hook, rename this file to "pre-applypatch".
+
+. git-sh-setup
+precommit="$(git rev-parse --git-path hooks/pre-commit)"
+test -x "$precommit" && exec "$precommit" ${1+"$@"}
+:
+
+--- ./.git/hooks/pre-commit.sample ---
+#!/bin/sh
+#
+# An example hook script to verify what is about to be committed.
+# Called by "git commit" with no arguments.  The hook should
+# exit with non-zero status after issuing an appropriate message if
+# it wants to stop the commit.
+#
+# To enable this hook, rename this file to "pre-commit".
+
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+	against=HEAD
+else
+	# Initial commit: diff against an empty tree object
+	against=$(git hash-object -t tree /dev/null)
+fi
+
+# If you want to allow non-ASCII filenames set this variable to true.
+allownonascii=$(git config --type=bool hooks.allownonascii)
+
+# Redirect output to stderr.
+exec 1>&2
+
+# Cross platform projects tend to avoid non-ASCII filenames; prevent
+# them from being added to the repository. We exploit the fact that the
+# printable range starts at the space character and ends with tilde.
+if [ "$allownonascii" != "true" ] &&
+	# Note that the use of brackets around a tr range is ok here, (it's
+	# even required, for portability to Solaris 10's /usr/bin/tr), since
+	# the square bracket bytes happen to fall in the designated range.
+	test $(git diff --cached --name-only --diff-filter=A -z $against |
+	  LC_ALL=C tr -d '[ -~]\0' | wc -c) != 0
+then
+	cat <<\EOF
+Error: Attempt to add a non-ASCII file name.
+
+This can cause problems if you want to work with people on other platforms.
+
+To be portable it is advisable to rename the file.
+
+If you know what you are doing you can disable this check using:
+
+  git config hooks.allownonascii true
+EOF
+	exit 1
+fi
+
+# If there are whitespace errors, print the offending file names and fail.
+exec git diff-index --check --cached $against --
+
+--- ./.git/hooks/prepare-commit-msg.sample ---
+#!/bin/sh
+#
+# An example hook script to prepare the commit log message.
+# Called by "git commit" with the name of the file that has the
+# commit message, followed by the description of the commit
+# message's source.  The hook's purpose is to edit the commit
+# message file.  If the hook fails with a non-zero status,
+# the commit is aborted.
+#
+# To enable this hook, rename this file to "prepare-commit-msg".
+
+# This hook includes three examples. The first one removes the
+# "# Please enter the commit message..." help message.
+#
+# The second includes the output of "git diff --name-status -r"
+# into the message, just before the "git status" output.  It is
+# commented because it doesn't cope with --amend or with squashed
+# commits.
+#
+# The third example adds a Signed-off-by line to the message, that can
+# still be edited.  This is rarely a good idea.
+
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+SHA1=$3
+
+/usr/bin/perl -i.bak -ne 'print unless(m/^. Please enter the commit message/..m/^#$/)' "$COMMIT_MSG_FILE"
+
+# case "$COMMIT_SOURCE,$SHA1" in
+#  ,|template,)
+#    /usr/bin/perl -i.bak -pe '
+#       print "\n" . `git diff --cached --name-status -r`
+# 	 if /^#/ && $first++ == 0' "$COMMIT_MSG_FILE" ;;
+#  *) ;;
+# esac
+
+# SOB=$(git var GIT_COMMITTER_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
+# git interpret-trailers --in-place --trailer "$SOB" "$COMMIT_MSG_FILE"
+# if test -z "$COMMIT_SOURCE"
+# then
+#   /usr/bin/perl -i.bak -pe 'print "\n" if !$first_line++' "$COMMIT_MSG_FILE"
+# fi
+
+--- ./.git/hooks/push-to-checkout.sample ---
+#!/bin/sh
+
+# An example hook script to update a checked-out tree on a git push.
+#
+# This hook is invoked by git-receive-pack(1) when it reacts to git
+# push and updates reference(s) in its repository, and when the push
+# tries to update the branch that is currently checked out and the
+# receive.denyCurrentBranch configuration variable is set to
+# updateInstead.
+#
+# By default, such a push is refused if the working tree and the index
+# of the remote repository has any difference from the currently
+# checked out commit; when both the working tree and the index match
+# the current commit, they are updated to match the newly pushed tip
+# of the branch. This hook is to be used to override the default
+# behaviour; however the code below reimplements the default behaviour
+# as a starting point for convenient modification.
+#
+# The hook receives the commit with which the tip of the current
+# branch is going to be updated:
+commit=$1
+
+# It can exit with a non-zero status to refuse the push (when it does
+# so, it must not modify the index or the working tree).
+die () {
+	echo >&2 "$*"
+	exit 1
+}
+
+# Or it can make any necessary changes to the working tree and to the
+# index to bring them to the desired state when the tip of the current
+# branch is updated to the new commit, and exit with a zero status.
+#
+# For example, the hook can simply run git read-tree -u -m HEAD "$1"
+# in order to emulate git fetch that is run in the reverse direction
+# with git push, as the two-tree form of git read-tree -u -m is
+# essentially the same as git switch or git checkout that switches
+# branches while keeping the local changes in the working tree that do
+# not interfere with the difference between the branches.
+
+# The below is a more-or-less exact translation to shell of the C code
+# for the default behaviour for git's push-to-checkout hook defined in
+# the push_to_deploy() function in builtin/receive-pack.c.
+#
+# Note that the hook will be executed from the repository directory,
+# not from the working tree, so if you want to perform operations on
+# the working tree, you will have to adapt your code accordingly, e.g.
+# by adding "cd .." or using relative paths.
+
+if ! git update-index -q --ignore-submodules --refresh
+then
+	die "Up-to-date check failed"
+fi
+
+if ! git diff-files --quiet --ignore-submodules --
+then
+	die "Working directory has unstaged changes"
+fi
+
+# This is a rough translation of:
+#
+#   head_has_history() ? "HEAD" : EMPTY_TREE_SHA1_HEX
+if git cat-file -e HEAD 2>/dev/null
+then
+	head=HEAD
+else
+	head=$(git hash-object -t tree --stdin </dev/null)
+fi
+
+if ! git diff-index --quiet --cached --ignore-submodules $head --
+then
+	die "Working directory has staged changes"
+fi
+
+if ! git read-tree -u -m "$commit"
+then
+	die "Could not update working tree to new HEAD"
+fi
+
+--- ./.git/hooks/applypatch-msg.sample ---
+#!/bin/sh
+#
+# An example hook script to check the commit log message taken by
+# applypatch from an e-mail message.
+#
+# The hook should exit with non-zero status after issuing an
+# appropriate message if it wants to stop the commit.  The hook is
+# allowed to edit the commit message file.
+#
+# To enable this hook, rename this file to "applypatch-msg".
+
+. git-sh-setup
+commitmsg="$(git rev-parse --git-path hooks/commit-msg)"
+test -x "$commitmsg" && exec "$commitmsg" ${1+"$@"}
+:
+
+--- ./.git/config ---
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+[remote "origin"]
+	url = git@github.com:christianshub/kairos-rancher.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+	vscode-merge-base = origin/main
+
+--- ./.git/objects/81/4ddb3c70ad1fcb4030d3eb2bba22defbb5df64 ---
+x“I¯«F…³æW°G	ó$åEi0f0³m°ï®šÑÆ¿>7‰Ş.«Ôêè[œSUÒÉ†®«’eş—eÂ˜DÊx‘l–A1—Ëâœa8„ ƒ$9+DYå1Â	÷)«2‚PÉ(aAU°Â¢‚e!X‰
+æŠÃ\•¾–j˜H½šêy©aOşı”ìs</–¬¿eC÷ÉÊ‚¤püw2I1Ãßô{Ñÿ‡r,çº$ı{4Ã´}24Còl›>¸\cãNYGöG@ÓKkÃ@ônÖ3ğºë­øÇí„¡@­ØÆt%şb —mô“¤b[ıø «â¤¸Ê|.fw=K+ˆR[%&‘Îv3Óéõºzí³İ¯1^FŸ ùĞIr>8«ßİŒÆ^ùÑXªoÖÿ¨¸İÛsc<lgHé\xRª7ãµw–“… K”ÙÎ­¥J²»¿T×M{½¼•h„9ğôTğ˜vŠuÜ
+ÇÕø/	§3Ó[Ÿ-ïŞDçÛuÊ‚ú¢Ò˜]òù)™k;¯.Õì½©†Pü¸æœq¼!;ÉÑqÔÕœÌã÷'W[ßÊšèÕW^ßÚ	š2:2¥Öf¸Ì0Æ[{¾Ä,Ûyİ_‘ßÔ/hæ«ŠÒ=¹í¹é£0Ü²Š
+ö)a˜,ÏzÇ·Õ²ÚÛI<&_G“ÚXä|aÜSRõ*®^P	’réjjØ"hkYëÕ÷ogO7èÑî–TsºIÚƒ›këòå<gS5[)~àöb¢	ñ'–~9çû€sı¨¸‡=©§Ğúã,„ÂcjÇKÖY(œÏ¦©~-·w_+A&5—ÓÚÄU˜í‘ƒ´ßp-/ıé'7°§l¤†û(£ÌÈßâB,í¸>YXìª¥lh~a)onE«ƒ(íË«b7N§Õ³f]­dìd5½¶ä}·ŠßW(Ï$ôhqe4)åÓÌÕ;ÙãÚo°‰çØŞw 2ßØ‡ù£9í4ñogÿğ_!R;$şW¡\
+--- ./.git/objects/c2/9679fdb265318b699ac555c81b5fb8292d1a70 ---
+xmRËnÛ0ì™_±Urh”ê(¾É©£ôRÀ^‰‹°ÈU–”ÿ})¹I
+Ã<-ÉÙ™á,ëk¸½¹ÿt?Ù°RVâV(¼t`0b>+uƒí|C+`W°Á:Ü’R‹şİÏ•RÖf³Iİí\nv$ ƒ=Bv¹úı˜ûg»Íèºêÿü™{>€õ¤]ÑõÂ‚5s|Ciq £…—¹åb7[<!iF´d=[]tª-ú*ñïö,N‡ˆŞ ÎÜŞè-¥NÛè±ÌËüZ§ÆE^~Íï¦rñîhÊŒXw´ncì×d$YF(;ó§W@š£AÁ¹Œô¬•lFZ+Ë“²·I(u†ôäÃ ”B¡&BOâl–} Lç×3Ä–`Îe²ÎÌ4†¡iyïáòË¾etöªz¯@?r|8(“ƒ_}Çh"ÃJøÕñk1şè[RŸBÑÏ
+--- ./.git/objects/ba/a7d36623161cdd99d935c43d4d011a360f5b47 ---
+xmQ±NÃ0eÎWœBœ´ *RbaAJøÚX‰}åì¤êßã¤´ *Îçwï=¿+[*áq5¿¹…çN·
+Ş¤frĞd´#ĞFî0Š	ü¾<Š œÍfSJWµ¢ªAî,ˆâÙûçKœVd·z—¥ióÿøgş€å §ŞìSÙ1±,‰ü%Ø€ğ¾;yL4¥Íhq
+èĞCĞôR[äb´º¾šRXjióÀßˆp^Z%Y	iÔÓƒØa˜Ô•è³$K–"ÄĞ/’l¬†rqq4ÅJ;Y¶XÔŞï‡Ü#¯=wOÃ,úáWWª¥N‰SP0•‘µ‚M…Ò¼¾
+)>o"Š–aI¯ÖuŒ!f¬<ì‘vN“u CàÚƒ¯ÆÌ!P ñqb§®SUM³»CMÒèûüRø8q\ü ¨*»h
+--- ./.git/objects/fa/f8e206a281e1a812802e597c2cead06da7d599 ---
+xUQ]oÛ İ3¿âªy¬Hâ<ì§MI¬¨É´TUµ—	j£P° §[«ş÷©-/À¹‡sÏ¹4Ê4@Š¯_­2#Ç­Ñ²CH³'QÁ)sà„=‹zãüÎ ~}oGİBË[ÖöR‹zooIí<SªB \œe„Vá°rœÈŠÆ_ÅÇ"\ÙèÍå‚Æ íâ3—şLZã 00çy°ôuÖŒÃÄŒ?I=‘ëqî•/‚ã“øû‹‚§„$%|k“í_Ø&Q¿¶u²¿»!«oæÅa³§îøgMîŒòºÛl®ôş$êÖ?NÇÒªİsİÃ†±Q²…Ğ¡0³AhÖ(ÿÏi»‹Ï3„Şû`µJÊt™t¹^&ëuUäy6ÅˆL¯vLÃ'ÊT]„Èsæ™óÆ
+,4ŒÔ†ğUQxV5oß>h”¤"y–^“ßs´°Ë¿ï»›}WE!J’ç4'IFÒ2ãŒÓTPB(-’’²+ôHÕ¨X
+--- ./.git/objects/3b/0e8b80c648b0e7a2155d325d962404266126bd ---
+x“É«FE³æ+zæIÊ‹Âƒ1;šÙĞf4¾>N¢·Ë*µº:%•Juë#Bİ(Rd~Ù–ª¬X4”r^dE¦HRdKVRÍQÅä´P`S¾T÷ˆ[–)2/©º€,É%SAÂœ¦Ëª†+kÅòÇÖPÛ¥[·.¿ƒß‹Ÿ²Íïeµn6(ï†ßŠı(åE†b
+à$M’Ø—~İªÿ?¡™šµkÀ¯—¢›¶3 ‘mzò9õ80Ğì"ËŠÚÈ¥Ñé:$9µfÿˆâ´?1CêT9/Ëhë†Œšª“WYmúÓOo§Ye‚(-˜|ÒÁî¯lV\ÏN*=ÄšOmË•¼gX¼R§DKWS=Úıİ±Š§1€K¤¼ñÚ„WD,–½Ó)J—æå>ã3Kûau²ÅE+]Ó/ÆMz¬IÂİÚÁêKÍŠ9ì/¤'ïìûLx2N…«×LÃÇaÓ³ùV“,„â»–Šé:^0LÂ¼{)–£¦Iñ¬.QI˜šÌ»Ú(f=&æÇiñŞÜW•¾r{}\¶à³lFc«ÒœÜ3Ûàš+ò"Ùg/¸ŸÛH±Ğ¡¸Tº³q-çâm¼­¯ˆ5ãC=ğŠ‹ŒpX©İ-—¨Ù&X ˜½&J€+WÇßoƒ„â0©EZ™œ	(İÕÊõÀ9œ÷C:}¦ıãÙ9Ñ“ê'’›T2‰õğá÷“àŸXŸ6"öÂ½¬äw—çX·SÀÓG-…Sè÷‡¦¹0aùOæMv*Ü°õçbL®—ş†?y*%…u5®ÎãÎèÙ¦v§yLo¼ğ¬ÉqáÊ-Èò£‹6älÍ×ß|ïğñØİZE‚H
+DóŸQ¿j‰¥:»*¾¸2:ò ë'bC˜kS¿oŒšqsªxg`àXğ±±ìÅBøÖjJ´µSæÜL^ìm¦WM$½q¢ŸÎÆÒ„R®&†{Ç]	?ëHm¨1àZc†mš4“A
+¼B”ë~9êé~«ši-NÂ"Ésï¾şÀÀÆÌpìßÌèö_‰Á.v€ıãwXº
+--- ./.git/objects/6c/1a11bd14ba72fd61e71829a140e30e61155ac2 ---
+x+)JMU0¶d040031QHÎÏKËL×«LÌÍaØÊÀÀœ£9­¹¶rg×›R«E9o YzÇ
+--- ./.git/objects/a0/64283990d7dd2a2ea1b383eee4bf472cd8e21f ---
+xQÑnƒ İ³_ÁLÚ¬Ûo&múØF»ìÑ\‘ZSä:¤nûûŠéš,İÎ9÷pN(%–ä9Iz¡‡†‹E„H„ª	Šíî„pT%t¡ ì—Âšj‹Ÿ ÓøõÍ–qâa%Ì'êsÑbåXì‡”—v|Ë¹?’˜N“1?ÖŒ^zM%rT¨p:‰wéPŸwôX­˜]r/pÛŒ$–,"{ílZ‡ ·åëç¦bcËWÿ·Ø<G°š’äCÒ
+ÌábÚÕÅ©„ØÆ9²¿äVä¦®µŞA¨¡Ñ¨Z¡Ìøc„ìwùa›mòâ-ßdŒœÁ
+úé¹™Û§yş¾ËÖ·üvRFîÄˆ¢«ŸÅXô<·¡
+--- ./.git/objects/b2/bc350a1cca5d7b11ed002ea8bba0b67cf5792b ---
+x+)JMU07b040031QĞKÏ,ÉLÏË/Je+ãÜ¨ì5»ƒíè‚Øe'Ò4¬é51 …¤ÒÌœ”Ô"†U{«su^®ëİw~ûë%W7Å;Ÿ÷ x’ ã
+--- ./.git/objects/5e/c4f3d8c0760d0a3603fa18ecba762a5f2c0bd5 ---
+x+)JMU0¶d040031QHÎÏKËL×«LÌÍaÈHv}™­QQ&S[¤Èå{Å×¾Û T7b
+--- ./.git/objects/10/21d018c387e3fca37df6c036fc5c35f2cd6a93 ---
+x+)JMU0¶d040031QHÎÏKËL×«LÌÍaha™Ëpéö…ëaW4MÙÚä4ßŸ n>Ú
+--- ./.git/objects/85/6cd25767e9de0a79459f24be7635def0b2afd4 ---
+xMPËnÂ0ìÙ_±‚#
+‡#'·
+8D”¤ŠP/•b%Ø(v ñïu(jë“gvfwgóZå`ÿ©_ÔªeN¡äNì’ôÀc¨|tÏ¥A¥Òæ‡»cçzÓ´²€ †Z”Bòd
+·BBjCë:F ŒŸDaÛŒìg¤µTÃs¥LÜ™¹…´5êP«y£;›éT4J[àHµ>3»ĞµoT{¼ë;”„¼‹µ.Û¸T¸pæTüëŸ¬+ræaìFğlßÄO/tâÖïÓÄM×3ÜqÉb„Ù$%zõ9Æ›×Vö“év;ÈÈ¦âIavYµŠšz~NJèÃ±ÍkQ€ƒ½˜s¿P„Kš×Ü®ıHËå©£æşêcÍgi½0ä`×Ç^ä3ÊˆÇ	Æ„„nDhï×ñ¶|±úÒ{4r#oè†d8ºãqßCßæ°‡?
+--- ./.git/objects/f2/2a65e7802f91846e8583c0e0d7b3ff85421fe2 ---
+x+)JMU041g040031QrutñuÕËMa84­òï¦TÃîÌYGCOHÇïĞÔ•*01 …äü¼’¢üœ‚œÄ¼ÔbŞs/ÏXİZõ,Ï.¼1HRòÑÇ›ï ê2ó2KtóòSR/Hnügqí·fbL?ÍšQS_”ZTÌp©®èõ)e	k&şÔäÖZOÎÌ  "7>İ
+--- ./.git/objects/f2/b9597fd76cef9919b48c983592f98b7c9437e0 ---
+x+)JMU020d040031QrutñuÕËMaÈşT’pêºÎÑeNë¶M-ÿ+¼ª(9?/-3]¯217‡á|¶,_€á’ïÛÚ8;µ7åí‰	‚*KÉOÎN-ÒMÎÏ-È/N…(_¢a9áú]-½…››ß=Ùï®sã‘<TyFbAQ~E¥^rZ:£Â«šıBŠ³ıõ«Ššøu¿LTYAz|FR¢È6Sõ’&ınö.Õ4â¦GbÇ¯W½ ;&R²
+--- ./.git/objects/cf/6b1d0e5031a4f7b6860933892bb26e52bc5c52 ---
+x…P»NÄ0¤öW¬îj'äáÈIE:ôh›œ…Ïl'§ûwìK¢¢ÚİñìÌ¬{m{¨›òf?h;:Xó¡FBdŸ•/İ"9ZVpèùÁÍf€²'ÊÈÇ{¸\QÆÔº# B.jˆBylr/ök»Œ¯NöÖ†.éÈ8âì69ºø¤@a‹‚ÊY€	½ÿ1İ/4:;OW~"P@qR†˜?iHƒ½–qãÇÈ—¥ë=p!*äyÑ–YÑğì6+Z–y¯Õ”){5Nì =õhàšÀ€>X'©4b²Ê˜âN&5y·–»?R««r#\£/é€Cõúşörxxî`×4²euÍkVT¬l+‚—’3ÆyS´wä«½ŠÜ
+--- ./.git/objects/4d/95a21868e33476b43ed2efd1143a458edb1744 ---
+x+)JMU041c040031QĞKÏ,ÉLÏË/Je+ãÜ¨ì5»ƒíè‚Øe'Ò4¬é…ª
+rutñuÕËMaØµürš²˜Ìİ™7MØú2J™ñG»› BbQvfÃ§‘õ×sŞÏ”ÜÒ3ÃtÒÏîš)æ †$çç¥e¦ëU&ææ0üúñˆmQãÃBz‘5:¯.ä.¿: Û<Ü
+--- ./.git/objects/79/7baa8c0a6e498e81bf11ab4160a8e2fcead970 ---
+x“¹«V DSó·G	f)/
+f76˜Í€;–kÀì;æëã$z]ªL5:Åh4Ò¤]Ó”3ÀOùË<Bb:Ã³„"Y=QYSYF_ñ/6eœb<=Á‰ôñÛğLÆò/ƒtÆS‘0/Æ†ç_“&YÌãà‹¥‘x™‹nb1–Ó\Æ-ø=ıi‹¸Íà4ÿ™7qYÿ–vÍ g)†#pŠ  z"N'äK¿Egøÿò>ŸÊüú·Î²ª›à®Ş««¦àùüG J[?Î‚ps!SJYN°QµÁº5~XÙd0f¡ätYšF ˆyeÿäàtec7ŒWÈM,uR´ÒÚ9m3‡Eo7%hhîİûªğ=%¨-¸›*b
+ËØ9Ø¡a¿]ğı“U}Ó*ngãJ-lqôÉÃ™•ámqrPéİiñxÌªÈ›+Ô™†vwéf+ë†¡vYB€Bh›¼]4Nê'±ø»ÑšèŠ½°v6Ú
+Ä<ÈÚˆ¦Ğdì$à=A©k}ğ[Şx=ÄÚA 3Û§{²”Òî‚ãÈÌ+S´±uÊçö¾ZjÂ‰¸”L¾ÔaÜø©¼g’PüzõZâÏÉÎ"À_¬‹w#–'#J·¥]{‡.Œáœpè­‡kÀ[]jÇbœ]SµÈL"‹Z'ÕÈQkp½¼< P_8Va7Øà¸ïıYßó#]Êx½èèŠÃ£Ô2‘aNë %g `‘ãÉb7Fşñ¡ZHOÛô_‡ÆªzmˆÁÓ§8KÂ½ËŒYöÄ07JÛsÖ¿;°ƒ¦
+çtxİ`k¶‹·¢KÙZ3Ò‡i¡ExŒ3$jj¶*š­ÏÇI
+~ /¯	ÃJTÖ½×Âˆ]+Ğ¼BŠF±4Õn¢O¶Ö[qÛ}§’ä*°À¸¼¡ËE©äïrâ8È ™>›ÌÎo¼Å‰0ghºŠâ‹ú\s­'éz#/†w?Öğ*,{ÆØ!VÀS à*^	Ùwn£}¹DÚc$jU5¬è®~xCòÓ‡bmı~µ§ÓøáEí„üûÙ”şë1H ß‘¿  /Z;
+--- ./.git/objects/01/20ea7cbfe054736b4fe28f24c25a91f5bf1c6c ---
+xÕTÁÓ0åœ¯”C%¤´I[vªbµË…ÓÊu¦­UÇl§Û‚øwÆN\¥­VpÈ÷àfæùyüæÙ+©W0Í‹ÛWi6ÄHRøL”L‚Eç„ÚØd âM M€†Ô?…QLoÇ9ı
+Šr&ó$ øÖhíZÄdÏÌDŠÕdËj£Ç ¨E¹" L£"`LÉ ªØk¥hçy6MKĞgÜİÔ]¢/VZµe¥à£@+°9°šïĞî6Úà²îIÈF¢Æ	)~"Ø£uXeÏ¢DàæX;ÕZ
+.Ğ¶”Vf%®Y#]¶ªÌ¸¨·h,Ü?|û´ür÷áñÇã÷»¯WX:åÍKè¡šš×É]‰Ü–9`RÒ„‘t:5¦J­	¥ÊY‹;¡•…g!%9ZbŠ:^¢Å– ”çVäŒİPÇBƒ`}#FOø¹çU'*Ô.ªÎ‘2Ëó¶AĞ
+îSí¸x+ÒÁcŞ¯ß:Wg;Ä:cRìŠ~¾E¾;-†J”>Ş/©-Ş2Cq®VÔûX-:3ÆPĞŞ›Ş¼¿™Ïgá»Òt¯ÃG×¥§Î2=.’$/§¼Hglôœ1Åè†«ÒhÚ9lÒu¬+®€âİt\Ü,üc´X„Â ˆÀi'O7eÓ|:³Ùßğ³sü¼Jò–jcĞöfÇ†Ñ]¼™ÁR2q3A›®•‹öÒ{7‡\\–´¬|ÂúÛşúX+ŸÖ~'I¤;m}şrJ¬ôÊ'—‰ÿÎ% S¼
+
+--- ./.git/objects/e9/8e1cd761cb32b2061230340d4276e3390157eb ---
+x“¹«VESó··.3WÊ‹ÂllFƒÍĞ1ƒ1`Fc}œD¯K•Sm­bë{eC×5  Oı²LEU%Á299‚ X&ˆ¦H–CˆIŠ2)81$]bÏd*úP),ø”‡KóßÈ%$Á09E29bIÒ$Ë$›æX².õ0©šyi’üıŒuÒçÅ¼üYuIóø-º? ÁÑ, Ë p€$„Ø—~]ŠÿßP=«¹©À¯Ÿ¨hºÍ®Y‚½(ÿp` qõ(¢T	¹Ú(JŠOBxm³»†­K=Âs‘°‚Ğğº¢
+]U¦¬)HUëşäàu­vAxé©!¼ÌÇˆßmÃT·}ìoîµ¿Ñq æÕÉÙt)hkÕ¦ãpÚ½S‘œô=VRX²ôéÔÕ¸J:–¥
+Ë*ÔÌ§÷.ş)jf¿•ESˆ3ŠÑœİ=ÓQ¯"İ~»ARpŞL÷çÌp¾ÄçÉ{Ğ;wÛo*í¨—õ©]¸sıs2ç^Ò»y>ä`¢Ó	ds9Ä;z–u5Ñlİ—|>\xşàø#Ïéş8rµgêr†GMÜ…ÊĞ¸%Útñ<„Æ‹+sy^Ú³xD~ßm3é)OÉÊ«†q†/eÇêì…ÓzúsX‘=ˆ¸¶¦«ù+?³^åÄ=›Ø¸qöªàmA^óV¤Ö>\Ÿ÷¾-E­\kŸm‡@Ê2ÈEpÛJï; mÃÀ5Ø‚$ø´»öNíU¼áŞÀ(^œWÜNW”$8.ii«Şê‡¶5ò'šé$’¶*S••ıÜwA…„©./y£<ºo¿héÃUÛ<í²-u.?
+¡»Ì£Fš¾Ö[;+Á‡À@ñÍ0J×Z](ë=İ\J¿˜õLEÓ\EÇĞİ†§à°gqËïYe°Æ‚Kwß¥á1xéŞ"3á>ßFüÁºş:ŞÛúëTãİùê2:ïMÅú$ªÂ$Â¬@{YÙ½BßMî‹Ç‚ŸG§æM)Ç:…¯t;¨Ä+vŒlÏÈÏq¬¾¤ÓÒë,—Kô?2ôzbÿ:£XòƒºƒıîFV~
+--- ./.git/objects/dc/d8e8e294ef26627f3d62f85136be475b6fd99e ---
+xmR±NÃ0eÎWœBœP‚
+ŠÔÁÄRRëÄ×Æjìg'mÿ'¥-ªêél¿{ïù‹š
+˜Œ¯®á¹Õµ‚7©™¬3Úh#WEãşî‡ƒ<Š ¬ÅbQHWµ¢rÜZÄ£Ù×Kœ–d—z•ì¤©óÿøzNÀ¢×ÎSošT¶L,"@	6 ¼†ŸVîMéz°x	èĞCĞôR[äù`uzÖ¥°ĞÒæ½!6Âyi•d%¤Q“±ÂĞ©KÑeI–Ü‹C7N²»ä©/ÇGG½P¬´“EóÊûfî;ä©çãË0‹¾Õ¤¬©Ub\ÊHZÁ¦Ç¹Ò<=)>L"ŠîÃ^­kCÌXzhvN“u ÃyÏµ$_!™C @âİ…™ºV”m,Œn6I£oócâ}ÏqrŸMMRí?x‚ÓÖĞ6í>š
+£_ÇÒ
+--- ./.git/objects/6a/0ad67e06b6f91f4b73e13a8b3bf95b3e8440ef ---
+xKÊÉOR04gH*ÍÌIÑç*.)*M.)-Jå j9l
+--- ./.git/objects/96/d79f98e5d9422b6f951b699f26cbda9d1def75 ---
+xSIÏ£Vœ3¿âİ­öMÊDÃşlv|{Àc5‹ÛØ¿>N¢¹å”:µª[¥Rµª˜†¡İ Iô·mA0¥ÈBŠ8Ñ4Ãs9C£’BUI’V@eNòƒÍpAãrªb`QpB	s~6•HR•HĞbñ9¤>`YBàhŞ·fZ€Ò,íºµp¿Ç%Z·_õ Ûëbş!N E†'À û°£úÿ
+õ\¯m¾ÿY3LœŒLÃ•ÂÈ×şá1€öl¾eI’•Z*õVÓr|‘Ò¯›çQÚŸékj#ÈIR+˜š.5J2FRêşü›Ç€`|Uã¼Ì_ÍÄÇ›98Ïdğ¸ÃVëeá¢µ3:ÌJ¾ò»ÓLN	êR‰ªÂªZ‹\0®M™œ™´Sw±!–Q >Ñrïí¬¾½³†F4E\s§XİN÷’â—Â	’;-R&ecàl§œ¡U¢û^qËÈák!Z*ãºoşV„SªªkT(™¾~^¦«¬,'šÁ…›LÍÅ€ôÊÛ1¿[%ºXE0†u¦Vè¥½¶\B&S×Š·íTsšw{ğI.›ìÅ°’³:´¤Ùaàã¤Û£Çu¥ó°ÂQÁoÓqV{ÒõĞòˆkB¤	˜˜ñy{ŒÓunŠõQö®¸:NO6¶<2¼37;ª4õâ%“ÒèõùLÔ$³¯ªHD¸?Ü<eÌŠ¡åÛRú$Ü]Ï.iÕ6ä½4¸×K&ñ<®‹‹ÓÀ¡×õÁçe½E+^É'Çé„ì¡µt‹lp”ëR—¶_ØU‘N×89z5>¦Hà‹J„A®fœ6?ôÎ5[õø<3ò­¤˜`U´ñ3)0à¶á¥3®÷‘<"Ò“û]b¹°ÕğŞQÔ:AA˜ùÓÊë®n¾êlÔó¤Å,ià“¤çÛC‡_SeÏâ:÷áË”RÕâ×Ë˜±¾5SFu­–8³–ÜÆß™ôt|Ûu>|io§†[ùïH"yãrÿH±äû„Úˆ|IÓåÊ{¥ à<CK|kêbàç]ªoØ¿Ñ\õ¿ƒ%æ	ûùVk
+--- ./.git/objects/0d/ce58e9cc3adaaae66e3e5781521919e2f1d9ee ---
+x+)JMU0¶d040031QHÎÏKËL×«LÌÍa
+Ó^°fOÈG?Íü	2ë„«æ  ^Íp
+--- ./.git/objects/93/fef165d707113660a943267995aefae749524f ---
+x+)JMU07b040031QĞKÏ,ÉLÏË/JeÈâºVÇ¶í§¼wñC«nëŸÑv-ïM€@!©43'%µˆá“Vêóı‰-y­Í\ßü¿ÕIş yè 
+--- ./.git/objects/68/6344139bd30681211c692b147244f778f58edb ---
+xUQMoã İ3¿bÔ+’øû´«¤+j²ÚTUÕË
+j£P° §»­úßvVÛryóæÍ›¡Q¦R”ß­2#Ç­ÑO²CH³gQÁ)sà„=‹zãüÎ ~{oGİBË[ÖöR‹zïïIí<SªB \œe„Vá±rœÈŠÆ_ÅbB6zs	Ğ¤],ÃpéÏ¤5.  sî…Kÿ¡Îšq˜ø‘€ñg©'²s=Â½±òUp|?ÑbRğ”¤„ál²ı+Û$êq['û»±úöW^6{êÖäşç(¯»Íöááú@ïO¢nıÓát,­Ú½Ô=,`%[}
+;‹#Í%‚ásÚîâa¬b<ozïÃ«UR¦Ë¤ Ëõ2Y¯«"Ï³iÈôÊaÇ4|¡LÙY‰3Ïœ7V`¡ù`¤ö0„Ïê¬ˆÂó¾ªùúşI£$É³ôB˜Ÿ£q€]vü}wØİì+¸*
+Q’<§9I2’–gœ¦‚Bi‘””]¡fİ¨
+--- ./.git/objects/d2/7e72ebca2330183b020f6563f8283b2ae4cc98 ---
+x+)JMU0¶d040031QHÎÏKËL×«LÌÍahÍ¹şòW¥ë|•}e¦÷>lZ w"
+--- ./.git/objects/1a/50562ba0acbc54d4414e296ff8601cae137a9c ---
+x}QÁNã0İ³¿bÈmÓÄÁ‰Äµ¢.íŠ²qAN<4Q]ÙNÙñïk·Eì^Ö§™7ofŞ7Ê4À.²og­2ƒ¤­ÑÏı†-^°‚mæÀ¡İ£%qşúşŞº…F7¢ízõ>>éµóB©Š HÜ÷m4ÁØI ‹1¾ŠÍR1xsJÈF»ØFá´_ôÖ¸  ì„s¯2Hú‚6Ö»?(ùÒëÙ¹†Á±ıJºÅßÑbå”±´„«ğfÙòMÌRõ8¯Óåİ5‹X}s›«Ù’»õ¯	»ÿ1ôç›Ùüáá|Åï·X·şyµ]—V-^ëÎ`74ªo!ì!$Ü,Z@-…Ağ§O»9i @éñ†tŞãqZNGiÁG“Q:™TEgÉÁHäzå¨’H_um$R%TX£ğ2ü¡İ)¡1òPï£$€E¶~º[-®—$E%Ës³4cÓ2“Bò)rÆ8/Ò’‹ã‚Øñóö{àÿOêë†¦A
+--- ./.git/objects/a5/d1db4379704daa4dd322229f7c6b14761c0ef3 ---
+x+)JMU044a040031QĞKÏ,ÉLÏË/Je+ãÜ¨ì5»ƒíè‚Øe'Ò4¬é…ª
+rutñuÕËMa¸sãÅ£)ïÕ’êm“~šísÎ¿9ª(9?/-3]¯217‡!#ÙExöe¶FE™Lm‘"—ï_ûn ¨p.š
+--- ./.git/objects/pack/pack-de8eec82eca4a00d1b0a65520cb13856b2ffecdd.idx ---
+ÿtOc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     I· õT@È&}™gìŠªVÊ}èL¬±åƒØÌÀ8°¼¬kU$Q²ô¬Æ«zO‘/9Í±""Ucø¥}Î'¯æ‚33ÎÎ  E     Şì‚ì¤ 
+eR±8V²ÿìİŠsmèCfı;òµ°úT·ÂË,é
+--- ./.git/objects/pack/pack-de8eec82eca4a00d1b0a65520cb13856b2ffecdd.pack ---
+PACK      œ>xœu“É®«FEç|EÍ­ÄUØtÒKô(LkÀ€éìØ4…é…±ï×ç&O™%gt´¶öàiÑ©( Ê÷·ì–£‚ƒ9*Åİ]¼İPyƒ;1‡ùwÂçÇî9Äd­‡	(õDfJ²ü¸ı»ÖY/fú³ê2Òş~º?ö¼ˆ¤=äÀ²2ß´#”Ğ	5–üè‡©ÛÏÏŠĞzÉÿ§VÕL*ğÛßƒUİt§{àlê®Fúg ÖY»aYÆŠ,ûØ·£m]%PPæËÂEu+Ë²”:¾|PÛ|Şç¤	bîJŞÔ'U³X{ì$´ö›£Ã)œ•¦WDZWOuwRˆ¶+âmª›‡_”ÓÉ'uñaìBe8Yh+üÈĞ}”vâÔ|j´ŞeÀ#W¹¹Z9µc‘B©Âƒ·ûÓ[µ¼25±pÇ€ÕMÓwPÜ ¼U8›\e­yN_ìq¾ô)wĞTÇlÍ¶""Îê/=bŠ¡Î“5½Éñi›B˜çğ’¿®„ç8¯®ÖÕÎ’¬e9ÚZù.UÍæ’]£Šcşh+ «“ğak›œ˜ qÏ»;UH<vec$Ş‹Ó§7«¢à!GqûTÊ%{šˆÑy½$~4q‹Í€xÙ-ïÂ;)Yn¥·€¼ltAp†‰šzˆ}ÕÙ$¢}¨å{¿W}*M-G-ä¥c«ÊØ-YIÓïãò(Â3-ú/"¶{Áæ»wÜáW:LÍ>9ª}¤J?ÛCVÍ0²‚§š3à2¯f.ñµÑÔË:Y;vøÆ}„,w9hü1úLÑ];ºÚH~„Ş‹HÅóşü²4u=6õÒñú×Ì¥»ó±Åº€ÂŞ0‡`|öS©¸4=•ÜÁiİ/»Oëf|#)ŞğÆJ°¤ñvµÓFšû¢ê}cğ—}]İtˆÿğïA	TøI|Í“ãç“8¥¶Åá“OÑ}½Âd@Ùa7”y.ç·hFüÛø|ßö‡$±óË	Õ=ü·ŒÙ“o7[ğK¼¿ Ä?c¥xœ340031QrutñuÕËMa`òÜ®ğ5ÄAâ„ZíÌô7]«ÂNÕ¾  Ê]Ğ°xœSVÈNÌ,Ê/Ö-JÌKÎH- .İŞì‚ì¤ 
+eR±8V²ÿìİ
+--- ./.git/objects/50/6bf27460cad72cc5a64268aeb69577fd1253a5 ---
+xuWmoÛ6ŞgıŠC:`IIÍÜu­Ñk›nú–Ök‡¡Z¢-Î’¨‘”ìÃ~û#)[ÎÚ|²Èã½>÷Üe^ë9Müøè›{ôáÅÓ‹7/’äœ~­”%#;MB5–œ&yÓÕBµTéZéú½|JD[TÒl×Êè¶‘­£ŞªvI¯&3mI/Å•Ñ7·ôZ‹r.jÈKc³$IÓ4Iîİ£+K’_+õn$Ûe;…‘ÂÉ*tk•u¤ä ¶Ğu­7°1…:¥ºÒÖ-œ½M¥pb.,KÁ+W”Qdp£¹áeŒîûëŒX,TÁvE]S«Kié_s‰ˆdé…çÚUôôê2µÒ¬6xÙÂ´µG04/w¼õ:’äøøí³ãã)ı&i£ Ú+d“Ÿ­­U—)ıçaå\g§y>œysô×,yñvF‡Kğí–j­;>‹b5v\÷f›ïq G]ô†_”r-kİù:±óNZıåwk	Çd«Çy¾¼¢ÓÇßg§e÷³ÓÇ?œÕ¤t«{Úè¾.©V+É	XŒ.ûŒêjÉ…Àe-pÅY5r!l(&„a ÓŞ´#`\ˆşİ+«àd’\¶#å²££òpXêb…Jºé4¼I8IŸÃiO³[ÑÔ~áğÈ—øs%àÍmV,–¨Õîãş2r_	 ß’jÄrWdÑÒåì]<t•pTàÕW­uÈ0\l _Bÿ¸^Ôêá”F¬Z×ã6yÖ«ºä
+rÀÑkg˜CëÔ¯Ğ7µìMĞ¸P5g1àÑÇÑğ¤i<.€{¶èÍy;x$¶Jb>MßRº¦ƒo¯~»8ÈGŠ¦ãú#¡/üíz#ÓÜ5].z£˜kíøUšš†R§èï^Ü¢Eò•Oñÿ¤€æz’æÚàìÎ“RÎ•h§Ğ¼ÚhÓ¤H~[
+S¦¢)>H—/U‘®'Ù$û>]Mìú4›ÜÏñÏÓà[9(•óZ^s¯^‡?s¦—_i¥ãHÆ÷E­ûˆãšĞİ$¥`˜€kN^—ÊœİIÉA’¼hmo<ùN‹Vª8Ô×¾“¹ÌhTÊö%8œİÒ·‡›J‹FM·¿(ıJœ$¿sC33-S jR)´½&Àö2—ÒŒúu&½}?&‘?#PEİ['M’|ôãÁ7üB¬µA{	ütø^6ı	}
+}ñLß0gG`!Õ€Zât ç~z6i1tŒ8ôæGQyŸ¿B^r#@YN·mÈ}Î@ŒÇÇ/Uë˜Äß¼¼Æ…2èÚOoUyÂ4¶›l!øšÍ^zñYåEnf/Ş‘(@‹à‹aÊ8+}PÛQ´Q=œ~#“wÂÚ)……bÛ*~şô„çNªºó$‰ù ˆ@¬D†rìĞèà§\Ë&|ÿº@©tãI:P<ÖJZÉv'»&¯Õ<7aÈÑ-yèŠÜ;Å_õsY¸z÷UÜ{ƒwÁÒ«Ï^<÷öçË_Îò¯	QŞ[“ÏU›¯‚^Z¢oü ¥TÅ%X
+W;ÉÕbd3éº»õÉcªàeatC_·‚bÇ™TkŒ\ú7ÏØ^ìZ_Ía¬qIâ¼eÉ› ¼@©†‰şÄ#=ÎR]¥Î³aÖO>x09ÁT mĞR~ ‚]‡ 1£˜’-‰%H˜c‹±›BŞBp´àÁ„£¶ŒP?uè¹4Şˆ£Êì½ÓAByŠ9-7„mÍY?e¶Š@-•¬›¸"–%ı%Tcb.*t“Í†sĞ÷èEßaG“á NBo%E”Ş§áYÎ¶·§~&´¢‘¶ãmâÿw¡	Óˆáçƒ)m›Ê3ò.ã ¶	÷k'í¡5\-S{k’Q((%EøóTAÓnS`¤ß~lï3”1¶GÒ“‡#u13û©‰ïïØ:(Œ¯¸º›K<‹,6Üî
+¼,ÏDÙ pÛa³`èfK‡Å.VÈ³ÁğV¦ÂšÂ–Îö¶Â-Œƒ2lÅ–÷ìXwdøa»ùñÒşd@J`0ïà\›Ÿï–h£~îÄÒİ0¤wÿëÈ˜O XÔ*æ{OéX„ÿW Ñ™WbOhèÌ}í1!¦™×4®.˜ˆ' #gIÁí·¯œöİÒˆRÃwªÛT¤Œ>ƒ	&m›û<ù?]¥å
+--- ./.git/objects/b5/0000036c2996837d79b98aec753aa2306cec80 ---
+xMPMOã0İ³Å¨‘ÛæSN$«–CÔ¥]Q@ˆrâ!±bìÊvè.ˆÿº>yŞ¼7óæÕÊÔñ³F™AĞÆè'Ù¢ù3–Ğ'x‹Ú“Î8ÿ‰M5}{oİ@
+ó+ŞtRcµ†÷wB¤v+U /²	cá³p‚ÈbmŒ/G1†’Şœ
+28´n”Q8mçÒ €wî(‚¡/¨µf8Lü‘@‹g©'²sƒ;cå+
+Úãßo´±‰"Î²¨€Ÿá­’í+_Eêa]EÛ›ËlÄª«ë4ß­¶Ìíÿ,³»ßƒ<oWëûûó»ë±jüÓ®ßVmUgpj%{	‰Ñ)¡ñÔ¼Vlÿ»Ö¶''(ÕF U¼FuaÂ‹£±=ÚIö2ª6Éşñf·¹Ü–0Ës,²4ei%Y\$‚#Ë2Æò¨`|ö_q{ı+ğ;ïC:‹ETÄó(góå<Z.Ë<M“ù }î“=
+--- ./.git/objects/56/7609b1234a9b8806c5a05da6c866e480aa148d ---
+xKÊÉOR0gH*ÍÌIÑç "<@
+--- ./.git/objects/aa/bd7b6d2ce951ae8dbecfb7eba4d5b25f43cf4d ---
+x+)JMU040g040031QrutñuÕËMa¸sãÅ£)ïÕ’êm“~šísÎ¿9ÏÄ 2ó2KtóòSRâ|¾q Œ—ËŒù—Ä›]eZñ:ÜW!jÊó‹²S‹Šr¤÷Šì*ú›ø\Bs¡Ãc¾DÑ¨C Âk,A
+--- ./.git/objects/84/049d00d2dbd0d756d42961350686a06c83df9b ---
+xMÁnÂ0D{öW¬àˆGNnpˆ¡*¡^*'6ÄÂÄÈN ñïu€ªõÉû<3»ëBé¢ˆ¼ôK¥[K]oå¡šD
+ûĞ‚æ$ª´mğğõ
+ië"ğæ¬¬d-²	ÜnÉÚ6L©pq’¥ºËĞræ…ÖMÚ™…+YÛègZm;†g&¶ ™µgîFúC;£Ûã]ß	00~õ]lm…]p¥¼÷âûŸ¬{|DHÀ«;ã0¿°q >&Y¯¦¤cÙü=ŠãœÚå—OÖo­ìÆ“Íf° ë½ÈÊf»Ø/£fç¬‚>ÛBÉ\„ÜŸu+ˆšJ¸÷4»ç0n”Å–Õ$#/ˆ©ç{ïß]§Î0—Ÿ«Ålš§Ğ‹c‘(¢	B2JBÎ8	J¥qPÖC?…7
+--- ./.git/objects/28/3c952e6292c5f736ee653558d9486188faea8d ---
+xKÊÉOR05gPVpÌÉÉ/WHÌÉQÈÈ/.)V(Ï,ÉPÈM1U(H,..Ï/Já‰ƒ€0P– Ä„°
+--- ./.git/objects/7b/f3bfc2b9a68483e705b15b4d8be9f51113a27c ---
+x+)JMU07b040031QĞKÏ,ÉLÏË/Je+ãÜ¨ì5»ƒíè‚Øe'Ò4¬é51 …¤ÒÌœ”Ô"†OZ©Ïô'¶äµ6xp}óÿV'ùG p n
+--- ./.git/COMMIT_EDITMSG ---
+WIP
+
+--- ./.git/refs/remotes/origin/main ---
+e98e1cd761cb32b2061230340d4276e3390157eb
+
+--- ./.git/refs/remotes/origin/HEAD ---
+ref: refs/remotes/origin/main
+
+--- ./.git/refs/heads/main ---
+e98e1cd761cb32b2061230340d4276e3390157eb
+
+--- ./.git/index ---
+DIRC      ho›ôåho›ôå    ‡à  ¤  è  è   j
+Ö~¶ùKsá:‹;ù[>„@ï 
+.gitignore        hˆ ¢Ûlhˆ ¢Ûl    ‡á  ¤  è  è  ‰Â–yı²e1‹išÅUÈ_¸)-p builder/README.md h…„8£páh…„8£pá     ªö  ¤  è  è  =PV+ ¬¼TÔAN)oø`®zœ !builder/controlplanes/config.yaml h€B+)”h€B+)”    ‡ì  ¤  è  è  ½„ ÒÛĞ×VÔ)a5† lƒß› builder/init-node/config.yaml     hr”06Shhr”06Sh     #  ¤  è  è  Å…lÒWgéŞ
+yEŸ$¾v5Şğ²¯Ô builder/workers/config.yaml       TREE   ¡ 5 1
+“şñe×6`©C&y•®úçIRObuilder 4 3
+ò*eç€/‘„n…ƒÀà×³ÿ…Bâworkers 1 0
+Ò~rëÊ#0;ecø(;*äÌ˜init-node 1 0
+!ĞÃ‡ãü£}öÀ6ü\5òÍj“controlplanes 1 0
+ÎXéÌ:Úªæn>WRâñÙî¡İo¼´TC:"È¹¬	îÿ*Ñå·ï
+--- ./.git/logs/refs/remotes/origin/main ---
+b2f4acc68dab7a174f912f9039cdb12222550863 96d79f98e5d9422b6f951b699f26cbda9d1def75 Christian <christianhandest@gmail.com> 1746819471 +0200	update by push
+96d79f98e5d9422b6f951b699f26cbda9d1def75 797baa8c0a6e498e81bf11ab4160a8e2fcead970 Christian <christianhandest@gmail.com> 1746821426 +0200	update by push
+797baa8c0a6e498e81bf11ab4160a8e2fcead970 814ddb3c70ad1fcb4030d3eb2bba22defbb5df64 Christian <christianhandest@gmail.com> 1746823004 +0200	update by push
+814ddb3c70ad1fcb4030d3eb2bba22defbb5df64 3b0e8b80c648b0e7a2155d325d962404266126bd Christian <christianhandest@gmail.com> 1746831372 +0200	update by push
+3b0e8b80c648b0e7a2155d325d962404266126bd e98e1cd761cb32b2061230340d4276e3390157eb Christian <christianhandest@gmail.com> 1746890661 +0200	update by push
+
+--- ./.git/logs/refs/remotes/origin/HEAD ---
+0000000000000000000000000000000000000000 b2f4acc68dab7a174f912f9039cdb12222550863 Christian <christianhandest@gmail.com> 1746819450 +0200	clone: from github.com:christianshub/kairos-rancher.git
+
+--- ./.git/logs/refs/heads/main ---
+0000000000000000000000000000000000000000 b2f4acc68dab7a174f912f9039cdb12222550863 Christian <christianhandest@gmail.com> 1746819450 +0200	clone: from github.com:christianshub/kairos-rancher.git
+b2f4acc68dab7a174f912f9039cdb12222550863 96d79f98e5d9422b6f951b699f26cbda9d1def75 Christian <christianhandest@gmail.com> 1746819470 +0200	commit: WIP
+96d79f98e5d9422b6f951b699f26cbda9d1def75 797baa8c0a6e498e81bf11ab4160a8e2fcead970 Christian <christianhandest@gmail.com> 1746821424 +0200	commit: WIP
+797baa8c0a6e498e81bf11ab4160a8e2fcead970 814ddb3c70ad1fcb4030d3eb2bba22defbb5df64 Christian <christianhandest@gmail.com> 1746823002 +0200	commit: WIP
+814ddb3c70ad1fcb4030d3eb2bba22defbb5df64 3b0e8b80c648b0e7a2155d325d962404266126bd Christian <christianhandest@gmail.com> 1746831371 +0200	commit: WIP
+3b0e8b80c648b0e7a2155d325d962404266126bd e98e1cd761cb32b2061230340d4276e3390157eb Christian <christianhandest@gmail.com> 1746890659 +0200	commit: WIP
+
+--- ./.git/logs/HEAD ---
+0000000000000000000000000000000000000000 b2f4acc68dab7a174f912f9039cdb12222550863 Christian <christianhandest@gmail.com> 1746819450 +0200	clone: from github.com:christianshub/kairos-rancher.git
+b2f4acc68dab7a174f912f9039cdb12222550863 96d79f98e5d9422b6f951b699f26cbda9d1def75 Christian <christianhandest@gmail.com> 1746819470 +0200	commit: WIP
+96d79f98e5d9422b6f951b699f26cbda9d1def75 797baa8c0a6e498e81bf11ab4160a8e2fcead970 Christian <christianhandest@gmail.com> 1746821424 +0200	commit: WIP
+797baa8c0a6e498e81bf11ab4160a8e2fcead970 814ddb3c70ad1fcb4030d3eb2bba22defbb5df64 Christian <christianhandest@gmail.com> 1746823002 +0200	commit: WIP
+814ddb3c70ad1fcb4030d3eb2bba22defbb5df64 3b0e8b80c648b0e7a2155d325d962404266126bd Christian <christianhandest@gmail.com> 1746831371 +0200	commit: WIP
+3b0e8b80c648b0e7a2155d325d962404266126bd e98e1cd761cb32b2061230340d4276e3390157eb Christian <christianhandest@gmail.com> 1746890659 +0200	commit: WIP
+
+--- ./.git/info/exclude ---
+# git ls-files --others --exclude-from=.git/info/exclude
+# Lines that start with '#' are comments.
+# For a project mostly in C, the following would be a good set of
+# exclude patterns (uncomment them if you want to use them):
+# *.[oa]
+# *~
+
+--- ./.git/HEAD ---
+ref: refs/heads/main
+
+--- ./README.md ---
+# Kairos Rancher structure
+
+- `builder/` creates kairos images
+- `provisioner/` creates kairos ready VMs
