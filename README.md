@@ -9,3 +9,10 @@
 
 - `builder/` creates kairos images
 - `provisioner/` creates kairos ready VMs
+
+## Run
+
+```bash
+terraform init -upgrade
+terraform apply -parallelism=1 -lock=false
+```

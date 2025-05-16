@@ -10,8 +10,7 @@ This setup is intended to run HA
 
 ### Verification steps
 
-* Shutdown one of the controlplane nodes.
-
+- Shutdown one of the controlplane nodes.
 
 ## Build Kairos k3s iso image
 
@@ -21,12 +20,14 @@ This setup is intended to run HA
     docker run -v "$PWD"/config.yaml:/config.yaml \
     -v "$PWD"/build:/tmp/auroraboot \
     --rm -ti quay.io/kairos/auroraboot \
-    --set container_image=quay.io/kairos/debian:bookworm-standard-amd64-generic-v3.3.2-k3sv1.30.8-k3s1 \
+    --set container_image=quay.io/kairos/debian:12-standard-amd64-generic-v3.4.2-k3sv1.31.7-k3s1 \
     --set "disable_http_server=true" \
     --set "disable_netboot=true" \
     --cloud-config /config.yaml \
     --set "state_dir=/tmp/auroraboot"
     ```
+
+    > 1.31: quay.io/kairos/debian:12-standard-amd64-generic-v3.4.2-k3sv1.31.7-k3s1
 
 2.  Ensure correct permissions are set for the build directory:
 
