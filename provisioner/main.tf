@@ -49,7 +49,7 @@ resource "proxmox_vm_qemu" "kairos_vm_2" {
   iso         = "local:iso/kairos-1.30-cp.iso"
 
   cores  = 2
-  memory = 2000
+  memory = 8000
 
   disks {
     scsi {
